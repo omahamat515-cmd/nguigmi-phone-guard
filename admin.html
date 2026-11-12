@@ -8,19 +8,24 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;padding:18px;font-family:Arial;background:#f1f5f9;color:#172033}
-.container{max-width:950px;margin:20px auto}
+body{margin:0;padding:15px;font-family:Arial,sans-serif;background:#f1f5f9;color:#172033}
+.container{max-width:1050px;margin:20px auto}
 header{background:#075e54;color:white;padding:22px;border-radius:12px;margin-bottom:18px}
-.panel{background:white;padding:20px;border-radius:12px;margin-bottom:18px}
+.panel,.stat{background:white;padding:18px;border-radius:12px;margin-bottom:16px}
 input,select{width:100%;padding:12px;margin:8px 0 14px;border:1px solid #cbd5e1;border-radius:7px;font-size:15px}
-button{padding:12px 17px;border:0;border-radius:7px;background:#075e54;color:white;cursor:pointer;margin:4px}
+button{padding:12px 15px;border:0;border-radius:7px;background:#075e54;color:white;cursor:pointer;margin:4px}
 button:disabled{opacity:.6;cursor:not-allowed}
 .logout,.delete{background:#b42318}
+.secondary{background:#475569}
 .report{background:white;border:1px solid #dbe3ea;border-radius:9px;padding:16px;margin-top:14px;overflow-wrap:anywhere}
 .report h3{color:#075e54;margin-top:0}
 .status{font-weight:bold;color:#075e54}
-#message{margin-top:12px;font-weight:bold}
-#searchMessage{margin:5px 0 12px;font-weight:bold}
+.warning{color:#b42318;font-weight:bold}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-bottom:16px}
+.stat strong{display:block;font-size:25px;color:#075e54;margin-top:8px}
+.stat span{font-size:13px;color:#475569}
+#message,#searchMessage{margin-top:12px;font-weight:bold}
+.history-item{border-bottom:1px solid #e2e8f0;padding:12px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -44,261 +49,447 @@ button:disabled{opacity:.6;cursor:not-allowed}
 <div id="message"></div>
 </section>
 
-<section class="panel" id="dashboard" hidden>
-<h2>Signalements de téléphones</h2>
+<section id="dashboard" hidden>
+
+<div class="stats">
+<div class="stat"><span>Total des signalements</span><strong id="totalCount">0</strong></div>
+<div class="stat"><span>En attente</span><strong id="pendingCount">0</strong></div>
+<div class="stat"><span>Téléphones vérifiés</span><strong id="verifiedCount">0</strong></div>
+<div class="stat"><span>Téléphones retrouvés</span><strong id="foundCount">0</strong></div>
+</div>
+
+<section class="panel">
+<h2>Gestion des signalements</h2>
 
 <h3>Recherche par IMEI</h3>
 <input id="imeiSearch" type="search" inputmode="numeric"
 placeholder="Saisir les 15 chiffres de l'IMEI">
 <button id="searchButton" type="button">Rechercher</button>
-<button id="showAllButton" type="button">Afficher tous</button>
+<button id="showAllButton" class="secondary" type="button">Afficher tous</button>
 <p id="searchMessage"></p>
+
+<label for="statusFilter">Filtrer par statut</label>
+<select id="statusFilter">
+<option value="">Tous les statuts</option>
+<option value="En attente de vérification">En attente de vérification</option>
+<option value="Vérifié">Vérifié</option>
+<option value="Téléphone retrouvé">Téléphone retrouvé</option>
+</select>
 
 <p id="reportCount"></p>
 <button id="refreshButton" type="button">Actualiser</button>
+<button id="exportButton" class="secondary" type="button">Exporter en CSV</button>
+<button id="historyButton" class="secondary" type="button">Voir l'historique</button>
 <button id="logoutButton" class="logout" type="button">Déconnexion</button>
+
 <div id="reports"></div>
 </section>
 
+<section class="panel" id="historyPanel" hidden>
+<h2>Historique des actions</h2>
+<button id="closeHistoryButton" class="secondary" type="button">Fermer l'historique</button>
+<div id="historyList"></div>
+</section>
+
+</section>
 </div>
 
 <script>
+  
 const PROJECT_URL="https://dfnxqqqvrulqvrzxgnti.supabase.co";
 const PUBLISHABLE_KEY="sb_publishable_GtAhTYhgzC8YBfaAnDaRPA_BrniM2g0";
-
 const client=window.supabase.createClient(PROJECT_URL,PUBLISHABLE_KEY);
+
 const loginPanel=document.getElementById("loginPanel");
 const dashboard=document.getElementById("dashboard");
 const message=document.getElementById("message");
 const reportsContainer=document.getElementById("reports");
-const searchMessage=document.getElementById("searchMessage");
 
+let currentUser=null;
+let allReports=[];
+let currentReports=[];
 let currentSearch="";
 
 function showMessage(text,color="#b42318"){
-message.textContent=text;
-message.style.color=color;
+  message.textContent=text;
+  message.style.color=color;
 }
 
-function displayReports(data){
-reportsContainer.replaceChildren();
-
-document.getElementById("reportCount").textContent=
-data.length+" signalement(s) trouvé(s).";
-
-if(data.length===0){
-reportsContainer.textContent="Aucun signalement trouvé.";
-return;
+function updateStats(data){
+  document.getElementById("totalCount").textContent=data.length;
+  document.getElementById("pendingCount").textContent=
+    data.filter(p=>(p.status||"En attente de vérification")==="En attente de vérification").length;
+  document.getElementById("verifiedCount").textContent=
+    data.filter(p=>p.status==="Vérifié").length;
+  document.getElementById("foundCount").textContent=
+    data.filter(p=>p.status==="Téléphone retrouvé").length;
 }
 
-data.forEach(phone=>{
-const card=document.createElement("article");
-card.className="report";
+function renderReports(){
+  const filter=document.getElementById("statusFilter").value;
 
-const title=document.createElement("h3");
-title.textContent=(phone.brand||"Marque inconnue")+" "+(phone.model||"");
-card.appendChild(title);
+  let data=allReports.filter(phone=>{
+    const matchesIMEI=!currentSearch||phone.imei===currentSearch;
+    const matchesStatus=!filter||phone.status===filter;
+    return matchesIMEI&&matchesStatus;
+  });
 
-const fields=[
-["IMEI",phone.imei],
-["Couleur",phone.color],
-["Lieu",phone.last_seen_location],
-["Contact",phone.contact_phone],
-["Description",phone.description],
-["Date",phone.created_at?new Date(phone.created_at).toLocaleString("fr-FR"):""]
-];
+  currentReports=data;
+  updateStats(allReports);
 
-fields.forEach(([label,value])=>{
-const p=document.createElement("p");
-const strong=document.createElement("strong");
-strong.textContent=label+" : ";
-p.appendChild(strong);
-p.appendChild(document.createTextNode(value||"Non renseigné"));
-card.appendChild(p);
-});
+  document.getElementById("reportCount").textContent=
+    data.length+" signalement(s) affiché(s).";
 
-const statusLabel=document.createElement("p");
-statusLabel.className="status";
-statusLabel.textContent="Statut actuel : "+(phone.status||"En attente de vérification");
-card.appendChild(statusLabel);
+  reportsContainer.replaceChildren();
 
-const select=document.createElement("select");
-[
-"En attente de vérification",
-"Vérifié",
-"Téléphone retrouvé"
-].forEach(status=>{
-const option=document.createElement("option");
-option.value=status;
-option.textContent=status;
-if(status===phone.status)option.selected=true;
-select.appendChild(option);
-});
-card.appendChild(select);
+  if(data.length===0){
+    reportsContainer.textContent="Aucun signalement trouvé.";
+    return;
+  }
 
-const saveButton=document.createElement("button");
-saveButton.type="button";
-saveButton.textContent="Enregistrer le statut";
+  const imeiCounts={};
+  allReports.forEach(phone=>{
+    if(phone.imei){
+      imeiCounts[phone.imei]=(imeiCounts[phone.imei]||0)+1;
+    }
+  });
 
-saveButton.addEventListener("click",async()=>{
-saveButton.disabled=true;
-saveButton.textContent="Enregistrement...";
+  data.forEach(phone=>{
+    const card=document.createElement("article");
+    card.className="report";
 
-const {error:updateError}=await client
-.from("phones")
-.update({status:select.value})
-.eq("id",phone.id);
+    const title=document.createElement("h3");
+    title.textContent=(phone.brand||"Marque inconnue")+" "+(phone.model||"");
+    card.appendChild(title);
 
-saveButton.disabled=false;
-saveButton.textContent="Enregistrer le statut";
+    if(phone.imei&&imeiCounts[phone.imei]>1){
+      const warning=document.createElement("p");
+      warning.className="warning";
+      warning.textContent="Attention : cet IMEI apparaît dans plusieurs signalements.";
+      card.appendChild(warning);
+    }
 
-if(updateError){
-alert("Erreur : "+updateError.message);
-}else{
-alert("Statut mis à jour avec succès !");
-await loadReports();
-}
-});
-card.appendChild(saveButton);
+    const fields=[
+      ["IMEI",phone.imei],
+      ["Couleur",phone.color],
+      ["Lieu",phone.last_seen_location],
+      ["Contact",phone.contact_phone],
+      ["Description",phone.description],
+      ["Date",phone.created_at?new Date(phone.created_at).toLocaleString("fr-FR"):""]
+    ];
 
-const deleteButton=document.createElement("button");
-deleteButton.type="button";
-deleteButton.className="delete";
-deleteButton.textContent="Supprimer le signalement";
+    fields.forEach(([label,value])=>{
+      const p=document.createElement("p");
+      const strong=document.createElement("strong");
+      strong.textContent=label+" : ";
+      p.appendChild(strong);
+      p.appendChild(document.createTextNode(value||"Non renseigné"));
+      card.appendChild(p);
+    });
 
-deleteButton.addEventListener("click",async()=>{
-if(!confirm("ATTENTION : supprimer définitivement ce signalement ?"))return;
+    const statusLabel=document.createElement("p");
+    statusLabel.className="status";
+    statusLabel.textContent="Statut actuel : "+(phone.status||"En attente de vérification");
+    card.appendChild(statusLabel);
 
-deleteButton.disabled=true;
-deleteButton.textContent="Suppression...";
+    const select=document.createElement("select");
+    [
+      "En attente de vérification",
+      "Vérifié",
+      "Téléphone retrouvé"
+    ].forEach(status=>{
+      const option=document.createElement("option");
+      option.value=status;
+      option.textContent=status;
+      if(status===(phone.status||"En attente de vérification")){
+        option.selected=true;
+      }
+      select.appendChild(option);
+    });
+    card.appendChild(select);
 
-const {data:deletedRows,error:deleteError}=await client
-.from("phones").delete().eq("id",phone.id).select("id");
+    const saveButton=document.createElement("button");
+    saveButton.type="button";
+    saveButton.textContent="Enregistrer le statut";
 
-deleteButton.disabled=false;
-deleteButton.textContent="Supprimer le signalement";
+    saveButton.addEventListener("click",async()=>{
+      const oldStatus=phone.status||"En attente de vérification";
+      const newStatus=select.value;
 
-if(deleteError){
-alert("Erreur : "+deleteError.message);
-return;
-}
-if(!deletedRows||deletedRows.length===0){
-alert("Aucun signalement supprimé. Vérifie les autorisations.");
-return;
-}
+      if(oldStatus===newStatus){
+        alert("Le statut n'a pas changé.");
+        return;
+      }
 
-alert("Signalement supprimé avec succès.");
-await loadReports();
-});
+      saveButton.disabled=true;
+      saveButton.textContent="Enregistrement...";
 
-card.appendChild(deleteButton);
-reportsContainer.appendChild(card);
-});
+      const {error:updateError}=await client
+        .from("phones")
+        .update({status:newStatus})
+        .eq("id",phone.id);
+
+      if(updateError){
+        alert("Erreur : "+updateError.message);
+        saveButton.disabled=false;
+        saveButton.textContent="Enregistrer le statut";
+        return;
+      }
+
+      const {error:historyError}=await client
+        .from("phone_history")
+        .insert({
+          phone_id:phone.id,
+          action:"Changement de statut",
+          old_status:oldStatus,
+          new_status:newStatus,
+          admin_user_id:currentUser
+        });
+
+      if(historyError){
+        alert("Statut modifié, mais historique non enregistré : "+historyError.message);
+      }else{
+        alert("Statut mis à jour et historique enregistré.");
+      }
+
+      await loadReports();
+    });
+
+    card.appendChild(saveButton);
+
+    const deleteButton=document.createElement("button");
+    deleteButton.type="button";
+    deleteButton.className="delete";
+    deleteButton.textContent="Supprimer le signalement";
+
+    deleteButton.addEventListener("click",async()=>{
+      if(!confirm("Attention : supprimer définitivement ce signalement ?"))return;
+
+      deleteButton.disabled=true;
+      deleteButton.textContent="Suppression...";
+
+      const {data:deletedRows,error:deleteError}=await client
+        .from("phones")
+        .delete()
+        .eq("id",phone.id)
+        .select("id");
+
+      if(deleteError||!deletedRows||deletedRows.length===0){
+        alert("Suppression impossible : "+(deleteError?.message||"aucune ligne supprimée"));
+        deleteButton.disabled=false;
+        deleteButton.textContent="Supprimer le signalement";
+        return;
+      }
+
+      const {error:historyError}=await client
+        .from("phone_history")
+        .insert({
+          phone_id:null,
+          action:"Signalement supprimé - IMEI : "+(phone.imei||"inconnu"),
+          old_status:phone.status||"En attente de vérification",
+          new_status:null,
+          admin_user_id:currentUser
+        });
+
+      if(historyError){
+        alert("Signalement supprimé, mais historique non enregistré : "+historyError.message);
+      }else{
+        alert("Signalement supprimé. L'action est enregistrée dans l'historique.");
+      }
+
+      await loadReports();
+    });
+
+    card.appendChild(deleteButton);
+    reportsContainer.appendChild(card);
+  });
 }
 
 async function loadReports(){
-reportsContainer.textContent="Chargement...";
+  reportsContainer.textContent="Chargement...";
 
-let query=client.from("phones")
-.select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
-.order("created_at",{ascending:false});
+  const {data,error}=await client
+    .from("phones")
+    .select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
+    .order("created_at",{ascending:false});
 
-if(currentSearch){
-query=query.eq("imei",currentSearch);
-}
+  if(error){
+    reportsContainer.textContent="Erreur : "+error.message;
+    return;
+  }
 
-const {data,error}=await query;
-
-if(error){
-reportsContainer.textContent="Erreur : "+error.message;
-return;
-}
-
-displayReports(data);
+  allReports=data||[];
+  renderReports();
 }
 
 async function searchIMEI(){
-const value=document.getElementById("imeiSearch").value.trim();
+  const value=document.getElementById("imeiSearch").value.trim();
+  const searchMessage=document.getElementById("searchMessage");
 
-if(!/^\d{15}$/.test(value)){
-searchMessage.textContent="Saisis un IMEI composé exactement de 15 chiffres.";
-searchMessage.style.color="#b42318";
-return;
-}
+  if(!/^\d{15}$/.test(value)){
+    searchMessage.textContent="Saisis exactement 15 chiffres.";
+    searchMessage.style.color="#b42318";
+    return;
+  }
 
-currentSearch=value;
-searchMessage.textContent="Recherche en cours...";
-searchMessage.style.color="#075e54";
+  currentSearch=value;
+  renderReports();
 
-await loadReports();
-
-if(reportsContainer.textContent==="Aucun signalement trouvé."){
-searchMessage.textContent="Aucun téléphone signalé avec cet IMEI.";
-}else{
-searchMessage.textContent="Recherche terminée.";
-}
+  searchMessage.textContent=
+    currentReports.length?"Recherche terminée.":"Aucun téléphone signalé avec cet IMEI.";
+  searchMessage.style.color="#075e54";
 }
 
 document.getElementById("searchButton").addEventListener("click",searchIMEI);
 
 document.getElementById("imeiSearch").addEventListener("keydown",event=>{
-if(event.key==="Enter"){
-event.preventDefault();
-searchIMEI();
-}
+  if(event.key==="Enter"){
+    event.preventDefault();
+    searchIMEI();
+  }
 });
 
 document.getElementById("showAllButton").addEventListener("click",()=>{
-currentSearch="";
-document.getElementById("imeiSearch").value="";
-searchMessage.textContent="";
-loadReports();
+  currentSearch="";
+  document.getElementById("imeiSearch").value="";
+  document.getElementById("statusFilter").value="";
+  document.getElementById("searchMessage").textContent="";
+  renderReports();
 });
 
-document.getElementById("loginForm").addEventListener("submit",async event=>{
-event.preventDefault();
-
-const button=document.getElementById("loginButton");
-button.disabled=true;
-showMessage("Connexion en cours...","#075e54");
-
-const {data,error}=await client.auth.signInWithPassword({
-email:document.getElementById("email").value.trim(),
-password:document.getElementById("password").value
-});
-
-button.disabled=false;
-
-if(error){
-showMessage("Erreur de connexion : "+error.message);
-return;
-}
-
-const {data:admin,error:adminError}=await client
-.from("admin_users")
-.select("user_id")
-.eq("user_id",data.user.id)
-.maybeSingle();
-
-if(adminError||!admin){
-await client.auth.signOut();
-showMessage("Accès refusé : compte non administrateur.");
-return;
-}
-
-loginPanel.hidden=true;
-dashboard.hidden=false;
-await loadReports();
-});
+document.getElementById("statusFilter").addEventListener("change",renderReports);
 
 document.getElementById("refreshButton").addEventListener("click",loadReports);
 
+document.getElementById("exportButton").addEventListener("click",()=>{
+  if(currentReports.length===0){
+    alert("Aucun signalement à exporter.");
+    return;
+  }
+
+  const columns=[
+    "IMEI","Marque","Modèle","Couleur","Statut",
+    "Lieu","Contact","Description","Date"
+  ];
+
+  const rows=currentReports.map(p=>[
+    p.imei,p.brand,p.model,p.color,p.status,
+    p.last_seen_location,p.contact_phone,p.description,p.created_at
+  ]);
+
+  const escapeCSV=value=>'"'+String(value??"").replace(/"/g,'""')+'"';
+  const csv=[columns,...rows].map(row=>row.map(escapeCSV).join(";")).join("\n");
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download="nguigmi-phone-guard-signalements.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+async function loadHistory(){
+  const historyList=document.getElementById("historyList");
+  historyList.textContent="Chargement de l'historique...";
+
+  const {data,error}=await client
+    .from("phone_history")
+    .select("id,phone_id,action,old_status,new_status,admin_user_id,created_at")
+    .order("created_at",{ascending:false})
+    .limit(100);
+
+  if(error){
+    historyList.textContent="Erreur historique : "+error.message;
+    return;
+  }
+
+  historyList.replaceChildren();
+
+  if(!data||data.length===0){
+    historyList.textContent="Aucune action enregistrée pour le moment.";
+    return;
+  }
+
+  data.forEach(item=>{
+    const entry=document.createElement("div");
+    entry.className="history-item";
+
+    const action=document.createElement("strong");
+    action.textContent=item.action||"Action";
+    entry.appendChild(action);
+
+    const details=document.createElement("p");
+    details.textContent=
+      "Ancien statut : "+(item.old_status||"Non renseigné")+
+      " | Nouveau statut : "+(item.new_status||"Non renseigné");
+    entry.appendChild(details);
+
+    const date=document.createElement("small");
+    date.textContent=item.created_at?
+      new Date(item.created_at).toLocaleString("fr-FR"):"Date inconnue";
+    entry.appendChild(date);
+
+    historyList.appendChild(entry);
+  });
+}
+
+document.getElementById("historyButton").addEventListener("click",async()=>{
+  document.getElementById("historyPanel").hidden=false;
+  await loadHistory();
+});
+
+document.getElementById("closeHistoryButton").addEventListener("click",()=>{
+  document.getElementById("historyPanel").hidden=true;
+});
+
+document.getElementById("loginForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+
+  const button=document.getElementById("loginButton");
+  button.disabled=true;
+  showMessage("Connexion en cours...","#075e54");
+
+  const {data,error}=await client.auth.signInWithPassword({
+    email:document.getElementById("email").value.trim(),
+    password:document.getElementById("password").value
+  });
+
+  button.disabled=false;
+
+  if(error){
+    showMessage("Erreur de connexion : "+error.message);
+    return;
+  }
+
+  const {data:admin,error:adminError}=await client
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id",data.user.id)
+    .maybeSingle();
+
+  if(adminError||!admin){
+    await client.auth.signOut();
+    showMessage("Accès refusé : compte non administrateur.");
+    return;
+  }
+
+  currentUser=data.user.id;
+  loginPanel.hidden=true;
+  dashboard.hidden=false;
+  showMessage("");
+  await loadReports();
+});
+
 document.getElementById("logoutButton").addEventListener("click",async()=>{
-await client.auth.signOut();
-dashboard.hidden=true;
-loginPanel.hidden=false;
-document.getElementById("password").value="";
-showMessage("Déconnexion réussie.","#075e54");
+  await client.auth.signOut();
+  currentUser=null;
+  allReports=[];
+  currentReports=[];
+  dashboard.hidden=true;
+  loginPanel.hidden=false;
+  document.getElementById("password").value="";
+  document.getElementById("historyPanel").hidden=true;
+  showMessage("Déconnexion réussie.","#075e54");
 });
 </script>
 </body>
