@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -13,7 +14,8 @@ header{background:#075e54;color:white;padding:22px;border-radius:12px;margin-bot
 .panel{background:white;padding:20px;border-radius:12px;margin-bottom:18px}
 input,select{width:100%;padding:12px;margin:8px 0 14px;border:1px solid #cbd5e1;border-radius:7px;font-size:15px}
 button{padding:12px 17px;border:0;border-radius:7px;background:#075e54;color:white;cursor:pointer;margin:4px}
-.logout{background:#b42318}
+button:disabled{opacity:.6;cursor:not-allowed}
+.logout,.delete{background:#b42318}
 .report{background:white;border:1px solid #dbe3ea;border-radius:9px;padding:16px;margin-top:14px;overflow-wrap:anywhere}
 .report h3{color:#075e54;margin-top:0}
 .status{font-weight:bold;color:#075e54}
@@ -69,6 +71,7 @@ message.style.color=color;
 
 async function loadReports(){
 reportsContainer.textContent="Chargement...";
+
 const {data,error}=await client
 .from("phones")
 .select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
@@ -129,7 +132,7 @@ const select=document.createElement("select");
 const option=document.createElement("option");
 option.value=status;
 option.textContent=status;
-if(status===phone.status) option.selected=true;
+if(status===phone.status)option.selected=true;
 select.appendChild(option);
 });
 card.appendChild(select);
@@ -137,6 +140,7 @@ card.appendChild(select);
 const saveButton=document.createElement("button");
 saveButton.type="button";
 saveButton.textContent="Enregistrer le statut";
+
 saveButton.addEventListener("click",async()=>{
 saveButton.disabled=true;
 saveButton.textContent="Enregistrement...";
@@ -158,12 +162,53 @@ await loadReports();
 });
 card.appendChild(saveButton);
 
+const deleteButton=document.createElement("button");
+deleteButton.type="button";
+deleteButton.className="delete";
+deleteButton.textContent="Supprimer le signalement";
+
+deleteButton.addEventListener("click",async()=>{
+const confirmation=confirm(
+"ATTENTION : veux-tu vraiment supprimer ce signalement ? Cette action est définitive."
+);
+
+if(!confirmation)return;
+
+deleteButton.disabled=true;
+deleteButton.textContent="Suppression...";
+
+const {data:deletedRows,error:deleteError}=await client
+.from("phones")
+.delete()
+.eq("id",phone.id)
+.select("id");
+
+if(deleteError){
+deleteButton.disabled=false;
+deleteButton.textContent="Supprimer le signalement";
+alert("Erreur de suppression : "+deleteError.message);
+return;
+}
+
+if(!deletedRows || deletedRows.length===0){
+deleteButton.disabled=false;
+deleteButton.textContent="Supprimer le signalement";
+alert("Aucun signalement supprimé. Vérifie les autorisations.");
+return;
+}
+
+alert("Signalement supprimé avec succès.");
+await loadReports();
+});
+
+card.appendChild(deleteButton);
 reportsContainer.appendChild(card);
 });
 }
 
 document.getElementById("loginForm").addEventListener("submit",async(event)=>{
 event.preventDefault();
+
 const button=document.getElementById("loginButton");
 button.disabled=true;
 showMessage("Connexion en cours...","#075e54");
