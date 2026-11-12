@@ -20,6 +20,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .report h3{color:#075e54;margin-top:0}
 .status{font-weight:bold;color:#075e54}
 #message{margin-top:12px;font-weight:bold}
+#searchMessage{margin:5px 0 12px;font-weight:bold}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -45,6 +46,14 @@ button:disabled{opacity:.6;cursor:not-allowed}
 
 <section class="panel" id="dashboard" hidden>
 <h2>Signalements de téléphones</h2>
+
+<h3>Recherche par IMEI</h3>
+<input id="imeiSearch" type="search" inputmode="numeric"
+placeholder="Saisir les 15 chiffres de l'IMEI">
+<button id="searchButton" type="button">Rechercher</button>
+<button id="showAllButton" type="button">Afficher tous</button>
+<p id="searchMessage"></p>
+
 <p id="reportCount"></p>
 <button id="refreshButton" type="button">Actualiser</button>
 <button id="logoutButton" class="logout" type="button">Déconnexion</button>
@@ -58,37 +67,27 @@ const PROJECT_URL="https://dfnxqqqvrulqvrzxgnti.supabase.co";
 const PUBLISHABLE_KEY="sb_publishable_GtAhTYhgzC8YBfaAnDaRPA_BrniM2g0";
 
 const client=window.supabase.createClient(PROJECT_URL,PUBLISHABLE_KEY);
-
 const loginPanel=document.getElementById("loginPanel");
 const dashboard=document.getElementById("dashboard");
 const message=document.getElementById("message");
 const reportsContainer=document.getElementById("reports");
+const searchMessage=document.getElementById("searchMessage");
+
+let currentSearch="";
 
 function showMessage(text,color="#b42318"){
 message.textContent=text;
 message.style.color=color;
 }
 
-async function loadReports(){
-reportsContainer.textContent="Chargement...";
-
-const {data,error}=await client
-.from("phones")
-.select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
-.order("created_at",{ascending:false});
-
-if(error){
-reportsContainer.textContent="Erreur : "+error.message;
-return;
-}
-
-document.getElementById("reportCount").textContent=
-data.length+" signalement(s) enregistré(s).";
-
+function displayReports(data){
 reportsContainer.replaceChildren();
 
+document.getElementById("reportCount").textContent=
+data.length+" signalement(s) trouvé(s).";
+
 if(data.length===0){
-reportsContainer.textContent="Aucun signalement.";
+reportsContainer.textContent="Aucun signalement trouvé.";
 return;
 }
 
@@ -168,31 +167,22 @@ deleteButton.className="delete";
 deleteButton.textContent="Supprimer le signalement";
 
 deleteButton.addEventListener("click",async()=>{
-const confirmation=confirm(
-"ATTENTION : veux-tu vraiment supprimer ce signalement ? Cette action est définitive."
-);
-
-if(!confirmation)return;
+if(!confirm("ATTENTION : supprimer définitivement ce signalement ?"))return;
 
 deleteButton.disabled=true;
 deleteButton.textContent="Suppression...";
 
 const {data:deletedRows,error:deleteError}=await client
-.from("phones")
-.delete()
-.eq("id",phone.id)
-.select("id");
+.from("phones").delete().eq("id",phone.id).select("id");
+
+deleteButton.disabled=false;
+deleteButton.textContent="Supprimer le signalement";
 
 if(deleteError){
-deleteButton.disabled=false;
-deleteButton.textContent="Supprimer le signalement";
-alert("Erreur de suppression : "+deleteError.message);
+alert("Erreur : "+deleteError.message);
 return;
 }
-
-if(!deletedRows || deletedRows.length===0){
-deleteButton.disabled=false;
-deleteButton.textContent="Supprimer le signalement";
+if(!deletedRows||deletedRows.length===0){
 alert("Aucun signalement supprimé. Vérifie les autorisations.");
 return;
 }
@@ -206,7 +196,66 @@ reportsContainer.appendChild(card);
 });
 }
 
-document.getElementById("loginForm").addEventListener("submit",async(event)=>{
+async function loadReports(){
+reportsContainer.textContent="Chargement...";
+
+let query=client.from("phones")
+.select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
+.order("created_at",{ascending:false});
+
+if(currentSearch){
+query=query.eq("imei",currentSearch);
+}
+
+const {data,error}=await query;
+
+if(error){
+reportsContainer.textContent="Erreur : "+error.message;
+return;
+}
+
+displayReports(data);
+}
+
+async function searchIMEI(){
+const value=document.getElementById("imeiSearch").value.trim();
+
+if(!/^\d{15}$/.test(value)){
+searchMessage.textContent="Saisis un IMEI composé exactement de 15 chiffres.";
+searchMessage.style.color="#b42318";
+return;
+}
+
+currentSearch=value;
+searchMessage.textContent="Recherche en cours...";
+searchMessage.style.color="#075e54";
+
+await loadReports();
+
+if(reportsContainer.textContent==="Aucun signalement trouvé."){
+searchMessage.textContent="Aucun téléphone signalé avec cet IMEI.";
+}else{
+searchMessage.textContent="Recherche terminée.";
+}
+}
+
+document.getElementById("searchButton").addEventListener("click",searchIMEI);
+
+document.getElementById("imeiSearch").addEventListener("keydown",event=>{
+if(event.key==="Enter"){
+event.preventDefault();
+searchIMEI();
+}
+});
+
+document.getElementById("showAllButton").addEventListener("click",()=>{
+currentSearch="";
+document.getElementById("imeiSearch").value="";
+searchMessage.textContent="";
+loadReports();
+});
+
+document.getElementById("loginForm").addEventListener("submit",async event=>{
 event.preventDefault();
 
 const button=document.getElementById("loginButton");
