@@ -1,0 +1,181 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#075e54">
+<title>NGUIGMI PHONE GUARD</title>
+
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f1f7f5;color:#18332e}
+header{background:#075e54;color:white;padding:28px 18px;text-align:center}
+header h1{margin:0;font-size:25px}
+header p{margin:10px 0 0;color:#d8f5eb}
+main{max-width:650px;margin:25px auto;padding:0 15px}
+.card{background:white;padding:22px;border-radius:15px;box-shadow:0 4px 18px #00000010}
+h2{color:#075e54;margin-top:0}
+.notice{background:#e4f5ee;padding:13px;border-radius:9px;font-size:14px;line-height:1.5}
+label{display:block;font-weight:bold;margin:15px 0 6px}
+input,textarea{width:100%;padding:13px;border:1px solid #ccd9d5;border-radius:8px;font-size:16px}
+textarea{min-height:85px;resize:vertical}
+button{width:100%;padding:15px;margin-top:20px;background:#075e54;color:white;border:0;border-radius:9px;font-size:16px;font-weight:bold}
+button:disabled{opacity:.6}
+#message{margin-top:15px;padding:12px;border-radius:8px;display:none}
+footer{text-align:center;color:#60766f;padding:25px;font-size:13px}
+.hp{position:absolute;left:-9999px}
+</style>
+</head>
+
+<body>
+<header>
+<h1>NGUIGMI PHONE GUARD</h1>
+<p>Ensemble, protégeons nos téléphones au Niger 🇳🇪</p>
+</header>
+
+<main>
+<div class="card">
+<h2>Signaler un téléphone</h2>
+
+<p class="notice">
+Votre signalement sera enregistré avec le statut
+<strong>En attente de vérification</strong>.
+Ne publiez pas vos informations personnelles ailleurs.
+</p>
+
+<form id="reportForm">
+
+<label for="imei">Numéro IMEI *</label>
+<input id="imei" name="imei" inputmode="numeric"
+maxlength="16" minlength="14" required
+pattern="[0-9]{14,16}" placeholder="14 à 16 chiffres">
+
+<label for="brand">Marque du téléphone *</label>
+<input id="brand" name="brand" required placeholder="Ex : Samsung">
+
+<label for="model">Modèle *</label>
+<input id="model" name="model" required placeholder="Ex : Galaxy A15">
+
+<label for="color">Couleur</label>
+<input id="color" name="color" placeholder="Ex : Noir">
+
+<label for="location">Dernier lieu connu *</label>
+<input id="location" name="last_seen_location" required
+placeholder="Ville, quartier ou lieu">
+
+<label for="contact">Votre numéro de contact *</label>
+<input id="contact" name="contact_phone" required
+type="tel" placeholder="Ex : +227...">
+
+<label for="description">Description complémentaire</label>
+<textarea id="description" name="description"
+placeholder="Date du vol, circonstances, détails utiles..."></textarea>
+
+<div class="hp">
+<label>Ne pas remplir</label>
+<input name="website" tabindex="-1" autocomplete="off">
+</div>
+
+<label>Vérification de sécurité *</label>
+<div class="cf-turnstile"
+data-sitekey="0x4AAAAAAF96W1Z-CIQg5_z4"></div>
+
+<button id="submitBtn" type="submit">Envoyer le signalement</button>
+</form>
+
+<div id="message" role="status"></div>
+</div>
+</main>
+
+<footer>
+NGUIGMI PHONE GUARD · Projet communautaire de prévention et de signalement
+</footer>
+
+<script>
+const PROJECT_URL = "https://dfnxqqqvrulqvrzxgnti.supabase.co";
+const PUBLISHABLE_KEY = "sb_publishable_GtAhTYhgzC8YBfaAnDaRPA_BrniM2g0";
+const FUNCTION_URL = PROJECT_URL + "/functions/v1/report-phone";
+
+const form = document.getElementById("reportForm");
+const button = document.getElementById("submitBtn");
+const message = document.getElementById("message");
+
+function showMessage(text, success) {
+  message.style.display = "block";
+  message.style.background = success ? "#e1f5e9" : "#fde8e8";
+  message.style.color = success ? "#126333" : "#a32020";
+  message.textContent = text;
+}
+
+form.addEventListener("submit", async function(event) {
+  event.preventDefault();
+
+  const data = new FormData(form);
+  const captchaToken = form.querySelector(
+    '[name="cf-turnstile-response"]'
+  )?.value;
+
+  if (!captchaToken) {
+    showMessage("Veuillez terminer la vérification Cloudflare.", false);
+    return;
+  }
+
+  const payload = {
+    imei: data.get("imei").trim(),
+    brand: data.get("brand").trim(),
+    model: data.get("model").trim(),
+    color: data.get("color").trim(),
+    last_seen_location: data.get("last_seen_location").trim(),
+    contact_phone: data.get("contact_phone").trim(),
+    description: data.get("description").trim(),
+    website: data.get("website").trim(),
+    captcha_token: captchaToken
+  };
+
+  button.disabled = true;
+  button.textContent = "Envoi en cours...";
+
+  try {
+    const response = await fetch(FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": PUBLISHABLE_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || result.message ||
+        "Impossible d'envoyer le signalement.");
+    }
+
+    showMessage(
+      "Signalement envoyé avec succès ! Il est en attente de vérification.",
+      true
+    );
+
+    form.reset();
+
+    if (window.turnstile) {
+      window.turnstile.reset();
+    }
+
+  } catch (error) {
+    showMessage(error.message || "Une erreur est survenue.", false);
+    if (window.turnstile) {
+      window.turnstile.reset();
+    }
+  } finally {
+    button.disabled = false;
+    button.textContent = "Envoyer le signalement";
+  }
+});
+</script>
+</body>
+</html>
