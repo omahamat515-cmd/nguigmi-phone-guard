@@ -1,236 +1,211 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Administration - NGUIGMI PHONE GUARD</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 20px;
-      font-family: Arial, sans-serif;
-      background: #f1f5f9;
-      color: #172033;
-    }
-    .container {
-      max-width: 950px;
-      margin: 25px auto;
-    }
-    header {
-      background: #075e54;
-      color: white;
-      padding: 22px;
-      border-radius: 12px;
-      margin-bottom: 20px;
-    }
-    h1 { margin: 0 0 8px; font-size: 23px; }
-    .panel {
-      background: white;
-      padding: 22px;
-      border-radius: 12px;
-      margin-bottom: 18px;
-      box-shadow: 0 2px 10px #0000000d;
-    }
-    input {
-      width: 100%;
-      padding: 13px;
-      margin: 8px 0 14px;
-      border: 1px solid #cbd5e1;
-      border-radius: 7px;
-      font-size: 16px;
-    }
-    button {
-      padding: 12px 18px;
-      border: 0;
-      border-radius: 7px;
-      background: #075e54;
-      color: white;
-      font-size: 15px;
-      cursor: pointer;
-    }
-    button:disabled { opacity: .6; }
-    .logout { background: #b42318; }
-    #message { margin-top: 14px; font-weight: bold; }
-    .report {
-      border: 1px solid #e2e8f0;
-      border-radius: 9px;
-      padding: 16px;
-      margin-top: 13px;
-      overflow-wrap: anywhere;
-    }
-    .report h3 { margin-top: 0; color: #075e54; }
-    .report p { margin: 8px 0; }
-    .muted { color: #64748b; }
-    [hidden] { display: none !important; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NGUIGMI PHONE GUARD - Administration</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:18px;font-family:Arial;background:#f1f5f9;color:#172033}
+.container{max-width:950px;margin:20px auto}
+header{background:#075e54;color:white;padding:22px;border-radius:12px;margin-bottom:18px}
+.panel{background:white;padding:20px;border-radius:12px;margin-bottom:18px}
+input,select{width:100%;padding:12px;margin:8px 0 14px;border:1px solid #cbd5e1;border-radius:7px;font-size:15px}
+button{padding:12px 17px;border:0;border-radius:7px;background:#075e54;color:white;cursor:pointer;margin:4px}
+.logout{background:#b42318}
+.report{background:white;border:1px solid #dbe3ea;border-radius:9px;padding:16px;margin-top:14px;overflow-wrap:anywhere}
+.report h3{color:#075e54;margin-top:0}
+.status{font-weight:bold;color:#075e54}
+#message{margin-top:12px;font-weight:bold}
+[hidden]{display:none!important}
+</style>
 </head>
 <body>
 <div class="container">
 
-  <header>
-    <h1>NGUIGMI PHONE GUARD 🇳🇪</h1>
-    <div>Tableau de bord administrateur</div>
-  </header>
+<header>
+<h1>NGUIGMI PHONE GUARD 🇳🇪</h1>
+<p>Tableau de bord administrateur</p>
+</header>
 
-  <section class="panel" id="loginPanel">
-    <h2>Connexion administrateur</h2>
-    <form id="loginForm">
-      <label for="email">Adresse e-mail</label>
-      <input id="email" type="email" required autocomplete="username">
+<section class="panel" id="loginPanel">
+<h2>Connexion administrateur</h2>
+<form id="loginForm">
+<label>Adresse e-mail</label>
+<input id="email" type="email" required>
+<label>Mot de passe</label>
+<input id="password" type="password" required>
+<button id="loginButton" type="submit">Se connecter</button>
+</form>
+<div id="message"></div>
+</section>
 
-      <label for="password">Mot de passe</label>
-      <input id="password" type="password" required autocomplete="current-password">
-
-      <button id="loginButton" type="submit">Se connecter</button>
-    </form>
-    <div id="message" role="status"></div>
-  </section>
-
-  <section class="panel" id="dashboard" hidden>
-    <h2>Signalements de téléphones</h2>
-    <p class="muted" id="reportCount"></p>
-    <button id="refreshButton" type="button">Actualiser</button>
-    <button id="logoutButton" class="logout" type="button">Déconnexion</button>
-    <div id="reports"></div>
-  </section>
+<section class="panel" id="dashboard" hidden>
+<h2>Signalements de téléphones</h2>
+<p id="reportCount"></p>
+<button id="refreshButton" type="button">Actualiser</button>
+<button id="logoutButton" class="logout" type="button">Déconnexion</button>
+<div id="reports"></div>
+</section>
 
 </div>
 
 <script>
-  const PROJECT_URL = "https://dfnxqqqvrulqvrzxgnti.supabase.co";
-  const PUBLISHABLE_KEY = "sb_publishable_GtAhTYhgzC8YBfaAnDaRPA_BrniM2g0";
+const PROJECT_URL="https://dfnxqqqvrulqvrzxgnti.supabase.co";
+const PUBLISHABLE_KEY="sb_publishable_GtAhTYhgzC8YBfaAnDaRPA_BrniM2g0";
 
-  const client = window.supabase.createClient(
-    PROJECT_URL,
-    PUBLISHABLE_KEY
-  );
+const client=window.supabase.createClient(PROJECT_URL,PUBLISHABLE_KEY);
 
-  const loginPanel = document.getElementById("loginPanel");
-  const dashboard = document.getElementById("dashboard");
-  const message = document.getElementById("message");
-  const reportsContainer = document.getElementById("reports");
+const loginPanel=document.getElementById("loginPanel");
+const dashboard=document.getElementById("dashboard");
+const message=document.getElementById("message");
+const reportsContainer=document.getElementById("reports");
 
-  function showMessage(text, color = "#b42318") {
-    message.textContent = text;
-    message.style.color = color;
-  }
+function showMessage(text,color="#b42318"){
+message.textContent=text;
+message.style.color=color;
+}
 
-  async function loadReports() {
-    reportsContainer.textContent = "Chargement des signalements...";
-    document.getElementById("reportCount").textContent = "";
+async function loadReports(){
+reportsContainer.textContent="Chargement...";
+const {data,error}=await client
+.from("phones")
+.select("id,created_at,imei,brand,model,color,status,description,last_seen_location,contact_phone")
+.order("created_at",{ascending:false});
 
-    const { data, error } = await client
-      .from("phones")
-      .select("id, created_at, imei, brand, model, color, status, description, last_seen_location, contact_phone")
-      .order("created_at", { ascending: false });
+if(error){
+reportsContainer.textContent="Erreur : "+error.message;
+return;
+}
 
-    if (error) {
-      reportsContainer.textContent =
-        "Erreur de chargement : " + error.message;
-      return;
-    }
+document.getElementById("reportCount").textContent=
+data.length+" signalement(s) enregistré(s).";
 
-    document.getElementById("reportCount").textContent =
-      data.length + " signalement(s) enregistré(s).";
+reportsContainer.replaceChildren();
 
-    reportsContainer.replaceChildren();
+if(data.length===0){
+reportsContainer.textContent="Aucun signalement.";
+return;
+}
 
-    if (data.length === 0) {
-      reportsContainer.textContent = "Aucun signalement pour le moment.";
-      return;
-    }
+data.forEach(phone=>{
+const card=document.createElement("article");
+card.className="report";
 
-    data.forEach(phone => {
-      const card = document.createElement("article");
-      card.className = "report";
+const title=document.createElement("h3");
+title.textContent=(phone.brand||"Marque inconnue")+" "+(phone.model||"");
+card.appendChild(title);
 
-      const title = document.createElement("h3");
-      title.textContent =
-        (phone.brand || "Marque inconnue") + " " +
-        (phone.model || "");
+const fields=[
+["IMEI",phone.imei],
+["Couleur",phone.color],
+["Lieu",phone.last_seen_location],
+["Contact",phone.contact_phone],
+["Description",phone.description],
+["Date",phone.created_at?new Date(phone.created_at).toLocaleString("fr-FR"):""]
+];
 
-      card.appendChild(title);
+fields.forEach(([label,value])=>{
+const p=document.createElement("p");
+const strong=document.createElement("strong");
+strong.textContent=label+" : ";
+p.appendChild(strong);
+p.appendChild(document.createTextNode(value||"Non renseigné"));
+card.appendChild(p);
+});
 
-      const fields = [
-        ["IMEI", phone.imei],
-        ["Couleur", phone.color],
-        ["Statut", phone.status],
-        ["Lieu du signalement", phone.last_seen_location],
-        ["Téléphone de contact", phone.contact_phone],
-        ["Description", phone.description],
-        ["Date", phone.created_at
-          ? new Date(phone.created_at).toLocaleString("fr-FR")
-          : ""]
-      ];
+const statusLabel=document.createElement("p");
+statusLabel.className="status";
+statusLabel.textContent="Statut actuel : "+(phone.status||"En attente de vérification");
+card.appendChild(statusLabel);
 
-      fields.forEach(([label, value]) => {
-        const p = document.createElement("p");
-        const strong = document.createElement("strong");
-        strong.textContent = label + " : ";
-        p.appendChild(strong);
-        p.appendChild(document.createTextNode(
-          value == null || value === "" ? "Non renseigné" : String(value)
-        ));
-        card.appendChild(p);
-      });
+const select=document.createElement("select");
+[
+"En attente de vérification",
+"Vérifié",
+"Téléphone retrouvé"
+].forEach(status=>{
+const option=document.createElement("option");
+option.value=status;
+option.textContent=status;
+if(status===phone.status) option.selected=true;
+select.appendChild(option);
+});
+card.appendChild(select);
 
-      reportsContainer.appendChild(card);
-    });
-  }
+const saveButton=document.createElement("button");
+saveButton.type="button";
+saveButton.textContent="Enregistrer le statut";
+saveButton.addEventListener("click",async()=>{
+saveButton.disabled=true;
+saveButton.textContent="Enregistrement...";
 
-  document.getElementById("loginForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
+const {error:updateError}=await client
+.from("phones")
+.update({status:select.value})
+.eq("id",phone.id);
 
-    const button = document.getElementById("loginButton");
-    button.disabled = true;
-    showMessage("Connexion en cours...", "#075e54");
+saveButton.disabled=false;
+saveButton.textContent="Enregistrer le statut";
 
-    const email = document.getElementById("email").value.trim();
-    const password = document.getElementById("password").value;
+if(updateError){
+alert("Erreur : "+updateError.message);
+}else{
+alert("Statut mis à jour avec succès !");
+await loadReports();
+}
+});
+card.appendChild(saveButton);
 
-    const { data, error } = await client.auth.signInWithPassword({
-      email,
-      password
-    });
+reportsContainer.appendChild(card);
+});
+}
 
-    button.disabled = false;
+document.getElementById("loginForm").addEventListener("submit",async(event)=>{
+event.preventDefault();
+const button=document.getElementById("loginButton");
+button.disabled=true;
+showMessage("Connexion en cours...","#075e54");
 
-    if (error) {
-      showMessage("Échec de connexion : " + error.message);
-      return;
-    }
+const {data,error}=await client.auth.signInWithPassword({
+email:document.getElementById("email").value.trim(),
+password:document.getElementById("password").value
+});
 
-    const userId = data.user.id;
+button.disabled=false;
 
-    const { data: admin, error: adminError } = await client
-      .from("admin_users")
-      .select("user_id")
-      .eq("user_id", userId)
-      .maybeSingle();
+if(error){
+showMessage("Erreur de connexion : "+error.message);
+return;
+}
 
-    if (adminError || !admin) {
-      await client.auth.signOut();
-      showMessage("Accès refusé : ce compte n'est pas administrateur.");
-      return;
-    }
+const {data:admin,error:adminError}=await client
+.from("admin_users")
+.select("user_id")
+.eq("user_id",data.user.id)
+.maybeSingle();
 
-    loginPanel.hidden = true;
-    dashboard.hidden = false;
-    await loadReports();
-  });
+if(adminError||!admin){
+await client.auth.signOut();
+showMessage("Accès refusé : compte non administrateur.");
+return;
+}
 
-  document.getElementById("refreshButton").addEventListener("click", loadReports);
+loginPanel.hidden=true;
+dashboard.hidden=false;
+await loadReports();
+});
 
-  document.getElementById("logoutButton").addEventListener("click", async () => {
-    await client.auth.signOut();
-    dashboard.hidden = true;
-    loginPanel.hidden = false;
-    document.getElementById("password").value = "";
-    showMessage("Vous êtes déconnecté.", "#075e54");
-  });
+document.getElementById("refreshButton").addEventListener("click",loadReports);
+
+document.getElementById("logoutButton").addEventListener("click",async()=>{
+await client.auth.signOut();
+dashboard.hidden=true;
+loginPanel.hidden=false;
+document.getElementById("password").value="";
+showMessage("Déconnexion réussie.","#075e54");
+});
 </script>
 </body>
 </html>
